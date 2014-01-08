@@ -1,0 +1,48 @@
+/* Global styles */
+
+html, body, h1, h2, h3, a, p{
+	margin: 0;
+	padding: 0;
+	position: relative;
+}
+html, body, #app{
+	height: 100%;
+}
+#app{
+	background: #000;
+	color: #fff;
+}
+
+/* Layout */
+#app #conveyor{
+	height: 25%;
+	top: 0;
+	background: #000;
+}
+#app #container{
+	height: 75%;
+	background: #000;
+}
+
+/* For touch tests */
+body#hammer #conveyor,
+body#w3c #conveyor{
+	height: 60%;
+	background: #666;
+	position: relative;
+}
+body#hammer #container,
+body#w3c #container{
+	height: 40%;
+	background: #000;
+}
+body#hammer #conveyor .target{
+	position: relative;
+	top: 10px;
+	left: 10px;
+	width: 180px;
+	height: 180px;
+	background: #fff000;
+	border: 3px solid #fff;
+}
+
