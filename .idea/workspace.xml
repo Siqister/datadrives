@@ -175,7 +175,11 @@
       <created>1389590314178</created>
       <updated>1389590314178</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="initial commit after node installation.&#10;">
+      <created>1389591711614</created>
+      <updated>1389591711614</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="ToolWindowManager">
