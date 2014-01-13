@@ -133,7 +133,7 @@ require([
     	Caress,
     	io
     ){
-	console.log('Hello world');
+	console.log('Hello world!');
 
     //TODO: for development, to be removed
     Hammer.plugins.showTouches();
