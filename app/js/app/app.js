@@ -30,7 +30,7 @@ define([
     //add regions
 	//regions correspond to IDs in index.html
 	app.addRegions({
-		conveyor: '#conveyor',
+		controlPanel: '#control-panel',
 		dataManager: '#data-manager',
 		vizGallery: '#viz-gallery',
 		nav: '#nav'
@@ -60,9 +60,6 @@ define([
 		new options.opFlowController.Router({
 			controller: options.opFlowController 
 		});		
-		
-		//load the data conveyor belt
-		vent.trigger('app:show:nav', new NavView());
 
         $.ajaxSetup({
             xhrFields : {"withCredentials":true},
@@ -85,7 +82,8 @@ define([
         });
 
        //log in to obtain access to the backend API
-       loginModel.save();
+       //TODO: don't communicate with the backend yet; commented out
+       //loginModel.save();
 	});
 		
 	//Marionette application events
@@ -97,15 +95,9 @@ define([
 	});
 	
 	//Inter-module events
-	vent.on('app:show:conveyor', function(appView){
-		app.conveyor.show(appView);
-	});
 	vent.on('app:show:opFlow', function(appView){
 		app.dataManager.show(appView);
 	});
-	vent.on('app:show:nav', function(appView){
-		app.nav.show(appView);
-	});
-	
+
 	return app;
 });

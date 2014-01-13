@@ -11,10 +11,10 @@ define([
     'app/models/execution',
     'app/models/user',
 
-    'opFlow/views/operatorList',
+    //'opFlow/views/operatorList',
     'opFlow/views/operatorFlow',
     
-    'app/models/systemDataset',
+    //'app/models/systemDataset',
 
     'config'
     ], 
@@ -30,10 +30,10 @@ function(
     ExecutionModel,
     UserModel,
 
-    OperatorListView,
+    //OperatorListView,
     OperatorFlowView,
 
-    SystemDatasetModel,
+    //SystemDatasetModel,
 
     config
 ) {
@@ -51,18 +51,12 @@ function(
         template: _.template(templates.opVizActions),
         id: "workflow-container",
         regions: {
-            menu: "#operator-actions",
             operatorFlow: "#operator-flow",
-            operatorTime: "#operator-time"
         }
     });
 
     var _initializeLayout = function() {
-        //instance of layout
         Controller.layout = new Layout();
-        Controller.layout.on("show", function() {
-            //vent.trigger("opVizLayout:rendered");
-        });
         vent.trigger('app:show:opFlow', Controller.layout);
     };
     
@@ -72,29 +66,18 @@ function(
     	Controller.layout.operatorFlow.show(operatorFlowView);
     });
 
-    vent.on('arm:dataset', function(){
-        $("#data-manager").addClass("armed");
-    });
-    vent.on('disarm:dataset', function(){
-        $("#data-manager").removeClass("armed");
-    })
-    
-
     //public api for routers etc    
     Controller.loadWorkFlow = function(workflowId) {
-        //TODO: where is this set?
-        //config.user = config.user || new UserModel();
 
         //initialize datamodels
-        config.systemOperators = new SystemOperatorModel();
-        config.systemDatasets = new SystemDatasetModel();
+        //config.systemOperators = new SystemOperatorModel();
+        //config.systemDatasets = new SystemDatasetModel();
 
         //workflow needs system datasets and system operators first
-        $.when(config.systemOperators.deferred, config.systemDatasets.deferred).then(function() {
+        /*$.when(config.systemOperators.deferred, config.systemDatasets.deferred).then(function() {
 			
             config.workflow = new WorkflowRenderModel({id:workflowId});
 
-            //FIXME: this should not be nested deferreds. stupid.
             $.when(
                 config.user,
                 config.workflow.deferred
@@ -105,15 +88,14 @@ function(
 
 				//vizBuilderController.loadManager(config.workflow);
 				//Add datasets to conveyor after systemDatasets have fetched
-				vent.trigger('conveyor:add:datasets');
 
 				OperatorFlowView.renderFlowItems(config.workflow);
-                //TODO: OperatorListView is now obselete
-				//OperatorListView.showOperatorItems(config.systemOperators);
             });
-        });
-        
+        });*/
+
         this.renderOperatorFlow();
+        OperatorFlowView.renderFlowItems();
+
     };
     
     Controller.renderOperatorFlow = function() {

@@ -8,6 +8,8 @@ define([
     //'app/views/progressBar',
     'vent',
     'config',
+    'workflowHash',
+
     'hammer',
     'hammer-jquery'
 ], function (
@@ -19,9 +21,15 @@ define([
     //ProgressBarView,
     vent,
     config,
+    workflowHash,
+
     Hammer
 ) {
+
     var OperatorFlow = {};
+
+    var colorScale = d3.interpolateRgb(d3.rgb(255,204,0), d3.rgb(109,222,202));
+    var i = 0;
 
     // private module level var
 
@@ -30,7 +38,7 @@ define([
         template: _.template(templates.operatorFlow),
         initialize: function () {
             var self = this;
-            _.bindAll(this,"addNode", "initRemove", "graph", "initGraph", "canvasEvents", "renderFullGraph");
+            _.bindAll(this,"toggleChildren");
 
             vent.on("operator:error", function (errorType) {
                 self.showMessage("something went wrong");
@@ -55,7 +63,7 @@ define([
             'click #response': 'fetchData',
             'click #datasets': 'showSystemDatasets',
             'click #flow-canvas': 'canvasEvents',
-            'resize': 'graph',
+            'resize': 'graph'
             //'click [class~=add-dataset]': 'showSystemDatasets',
         },
 
@@ -85,14 +93,6 @@ define([
             operatorActions: '#operator-actions'
         },
 
-        canvasEvents: function (e) {
-            //hide menu
-            var $menu = this.$el.find('#operator-actions, #operator-list')
-            if ($menu.length > 0) {
-                $menu.hide()
-            }
-        },
-
         initGraph: function () {
             var self = this;
 
@@ -106,7 +106,7 @@ define([
                 bottom:20
             }
 
-            this.linkDistance = 100;
+            this.linkDistance = 50;
 
             $(window).on('resize', function(){
                 self.width = self.$el.width();
@@ -117,541 +117,393 @@ define([
             this.vis = d3.select("#flow-canvas").append("svg")
                     .attr("class", "viz");
 
+            //TODO: finesse this
             this.force = d3.layout.force()
-                    .charge(-2500)
-                    .linkDistance(this.linkDistance)
+                    .charge(-60)
+                    .linkDistance(function(d){
+                        if (d.target.highlighted){
+                            return self.linkDistance * 2;
+                        }else if(d.target.class === "parameter"){
+                            return self.linkDistance/1.5;
+                        }else{
+                            return self.linkDistance;
+                        }
+                    })
                     .linkStrength(1)
                     .friction(.5)
                     .gravity(0);
 
-            this.nodes = [];
+            this.tree = d3.layout.tree();
 
+            this.root = workflowHash;
+
+            //running layout initially will give this.root
+            //"depth" property
+            this.nodes = this.tree.nodes(this.root); //assigns "depth"
+            this.nodes = this.flattenNodes(this.root); //assigns "id"
+            this.nodes.forEach(function(d){
+                d.x = self.width/2;
+                d.y = self.height/2;
+            });
             this.links = [];
 
+            //hiding all the children except for original datasets
+            var originalDatasets = _.where(this.nodes, { depth: 1});
+            originalDatasets.forEach(function(d){
+                d.fixed = true;
+            });
 
-            // DRAW "Add Dataset" BTN
-            this.addDataset = this.vis.append("g")
-                    .attr("class", function (d) {
-                        return "add-dataset"
-                    });
+        },
 
-            this.addDataset.append("svg:circle")
-                    .attr("class", "node")
-                    .attr("class", function (d) {
-                        return 'node';
-                    })
-                    .attr("r", 20);
+        flattenNodes: function(root){
+            var nodes = [];
 
-            this.addDataset
-                    .append("text")
-                    .attr("class", "add-dataset-plus text-select-none")
-                    .attr("y", 10)
-                    .attr("text-anchor", "middle")
-                    .text("+");
+            function recurseNode(node){
+                if(node.children) node.children.forEach(function(v){ recurseNode(v); });
+                if(!node.id){
+                    //assigns unique id to each node in the tree
+                    i += 1;
+                    node.id = i;
+                }
+                nodes.push(node);
+            }
 
-            this.addDataset
-                    .append("text")
-                    .attr("y", 40)
-                    .attr("text-anchor", "middle")
-                    .text("Add Dataset");
+            recurseNode(root);
+            return nodes;
+        },
 
-			//TODO: enable this
-            //this.graph();
+        tracePath: function(child){
+            //remove all previous highlights
+            this.nodes.forEach(function(d){
+                d.highlighted = false;
+                d.isOption = false;
+            });
+
+            function recurseNode(node){
+                if(node.parent) recurseNode(node.parent);
+                node.highlighted = true;
+            }
+
+            recurseNode(child);
         },
 
         graph: function () {
+
             var self = this;
 
+            //Adjusting for "resize" event
             this.vis.attr("width", this.width)
-                    .attr("height", this.height)
+                    .attr("height", this.height);
 
             this.force
-                    .nodes(self.nodes)
-                    .links(self.links)
-                    .on("tick", tick)
-                    .size([this.width, this.height]);
+                .size([this.width, this.height])
+                .on("tick", tick);
+
+            //fix the position of the root node
+            this.root.fixed = true;
+            this.root.x = this.width/2;
+            this.root.y = this.height/2;
 
 
-            var nodes = this.force.nodes()
-            var links = this.force.links();
 
-            var datasets = _.where(this.nodes, {type: "dataset"});
+            //NODE MANIPULATION
 
-           //CALCULATE DATASET POSITIONS
-            datasets.forEach(function (d, i) {
-                d.x = 90;
-                d.yStore = (self.height / (datasets.length + 2)) * (i + 1);
-                d.fixed = true;
-            })
-
-            this.addDataset.attr("transform", function (d) {
-                return "translate(" + 90 + "," + (self.height / (datasets.length + 2)) * (datasets.length + 1) + ")";
+            //don't show terminal "dataset" nodes
+            this.nodes.forEach(function(d){
+                if(d.workflowID){
+                    var parent = d.parent;
+                    parent._children = parent._children || [];
+                    parent._children.push(d);
+                    parent.children = _.reject(parent.children, function(dd){ return dd.id === d.id; });
+                }
             });
 
-            // FIND FINAL CHILDREN
-            //FIXME: this is problematic for joined nodes
-            if (this.nodes.length > 0) {
+            //layout function needs to be called repeatedly
+            //as the "children" property of each node is updated/removed/added
+            this.nodes = self.flattenNodes(this.root);
 
-                var lastChildren = [];
+            //find terminal nodes in this iteration
+            //each terminal node can either have "operator", "parameter" or "workflow" as children
+            //TODO:fix this
+            /*var terminalNodes = _.filter(this.nodes, function(d){
+                //delete d.terminal;
+                return d.terminal == true;
+            });
+            terminalNodes.forEach(function(d, j){
+                console.log("---" + j)
+                console.log("Terminal node: " + d.name);
+                var _children = d._children || [];
+                d.children = d.children? d.children : [];
+                _children.forEach(function(dd){
+                   if(dd.class == "operator" || dd.class == "parameter"){
+                        dd.isOption = true;
+                        self.toggleChildren(dd);
 
-                var linkSources = _.map(this.links, function (link) {
-                    return link.source.uniqueID
+                        d.children.push(dd);
+
+                       console.log(d.name + " " + dd.name + " " + d._children.indexOf(dd));
+
+                       d._children.splice( d._children.indexOf(dd) ,1);
+                        self.nodes.push(dd);
+                   }
                 });
-                var linkTargets = _.map(this.links, function (link) {
-                    return link.target.uniqueID
+
+                console.log(d.children);
+                console.log(_children);
+
+            });*/
+
+            //Finally, generate links based on nodes
+            this.links = self.tree.links(this.nodes);
+            console.log("---Graph---");
+            console.log(this.root);
+            console.log(this.nodes);
+            console.log(this.links);
+            console.log("-------");
+
+
+            //restart the force layout
+            this.force
+                .nodes(this.nodes)
+                .links(this.links)
+                .start();
+
+
+            //draw, update or remove nodes
+            var node = this.vis.selectAll("g.node")
+                .data(this.nodes, function(d){ return d.id; });
+
+            var nodeEnter = node.enter()
+                .append("g")
+                .attr("class", function(d){
+                    return "node " + d.class;
+                })
+                .attr("transform", function(d){
+                    return "translate(" + d.x + "," + d.y + ")";
+                })
+                .on("click", function(d){
+                    self.tracePath(d);
+                    self.findWorkflow(d);
+                    self.graph();
+                })
+                .call(this.force.drag);
+            nodeEnter
+                .append("svg:circle")
+                .attr("r", function(d){
+                    if(d.depth == 1) return 25;
+                    //different sizes for "datasets", "operators", "parameters"
+                    switch(d.class){
+                        case "dataset":
+                            return 10;
+                            break;
+                        case "operator":
+                            return 17;
+                            break;
+                        case "parameter":
+                            return 9;
+                            break;
+                        default:
+                            return 20;
+                    }
+                })
+                .style("fill", function(d){
+                    if(d.depth === 0) return "none";
                 });
-
-
-                if (this.links.length > 0) {
-                    //datasets and operators
-                    var lastChildrenList = _.difference(linkTargets, linkSources)
-                    lastChildrenList.forEach(function (d, i) {
-                        lastChildren.push(_.findWhere(self.nodes, {uniqueID: d}));
-                    });
-                }
-
-
-                //find datasets without children
-                var datasetNodes = _.filter(this.nodes, function (node) {
-                    //unset terminal property
-                    delete node.terminal;
-                    return node.type == "dataset";
-                });
-
-                datasetNodes.forEach(function (d) {
-                    var a = _.filter(linkSources, function (dd) {
-                        return (d.uniqueID == dd)
-                    });
-                    var b = _.filter(linkTargets, function (dd) {
-                        return (d.uniqueID == dd)
-                    });
-                    if (!a.length && !b.length) {
-                        lastChildren.push(d)
+            nodeEnter
+                .append("image")
+                .attr("xlink:href", function(d){
+                    if (d.class == "dataset"){
+                        return config.getIconByDataset(d.name).path;
+                    }else if(d.class == "operator"){
+                        return config.getIconByOperation(d.name).path;
+                    }
+                })
+                .attr("x", function(d){
+                    if (d.class == "dataset"){
+                        return config.getIconByDataset(d.name).width/-2;
+                    }else if(d.class == "operator"){
+                        return config.getIconByOperation(d.name).width/-2;
+                    }
+                })
+                .attr("y", function(d){
+                    if (d.class == "dataset"){
+                        return config.getIconByDataset(d.name).height/-2;
+                    }else if(d.class == "operator"){
+                        return config.getIconByOperation(d.name).height/-2;
+                    }
+                })
+                .attr("width", function(d){
+                    if (d.class == "dataset"){
+                        return config.getIconByDataset(d.name).width;
+                    }else if(d.class == "operator"){
+                        return config.getIconByOperation(d.name).width;
+                    }
+                })
+                .attr("height", function(d){
+                    if (d.class == "dataset"){
+                        return config.getIconByDataset(d.name).height;
+                    }else if(d.class == "operator"){
+                        return config.getIconByOperation(d.name).height;
                     }
                 });
-            }
 
+            node.selectAll("text").remove();
+            node.filter(function(d){ return d.highlighted && d.depth > 0; })
+                .append("text")
+                .text(function(d){
+                    return d.name;
+                })
+                .attr("text-anchor", "middle")
+                .attr("x", 0)
+                .attr("y", function(d){
+                    if(d.class == "dataset"){
+                        return 45;
+                    }else if(d.class == "operator"){
+                        return 35;
+                    }else{
+                        return 20;
+                    }
+                });
 
-            //CALCULATE THE DISTANCE OF ALL EDGES FROM THE "ROOT" DATASET NODE
-            //will populate al elements of the links parameter with .distFromEnd and .endNodeID attribute
-            _.each(lastChildren, function(node){
-                self.updateEdgesWithDistanceCount(nodes, links, node, 0, node.uniqueID);
+            node.selectAll("circle").transition()
+                .style("fill", function(d){
+                    if(d.depth === 0){
+                        return "none";
+                    }else if(d.highlighted){
+                        return colorScale(d.depth/5);
+                    }else if(d.isOption){
+                        return "#aaa";
+                    }
+                });
 
-                    var terminalOperator = _.findWhere(self.nodes, {uniqueID: node.uniqueID})
-                    terminalOperator.terminal = true;
+            //click events for option nodes
+            //either "operator" or "parameter" node
+            /*node.filter(function(d){ return d.isOption == true; })
+                .on('click', function(d){
+                    console.log('click');
 
-            });
-            var maxDistFromEnd = _.max(links, function(d) {return d.distFromEnd}).distFromEnd;
+                    d.parent.terminal = false;
+                    d.terminal = true;
+                    d.parent.children = []; //empty all other children except this one
+                    console.log(d);
+                    d.parent.children.push(d);
+                    console.log(self.root);
 
+                    self.graph();
+                });*/
 
-            // CREATE AND DRAW LINKS
-            var linksColorScale = d3.scale.linear()
-                    .domain([0, maxDistFromEnd])
-                    .range(["#E6E6E6", "#444"])
-                    .interpolate(d3.interpolateLab);
-
-            var link = this.vis.selectAll('line.link')
-                    .data(links, function (d) {
-                        return d.source.uniqueID + '-' + d.target.uniqueID
-                    });
-
-            link.enter().insert('svg:line', "g.add-dataset")
-                    .attr("class", "link")
-                    .style('stroke-width', 4)
-                    .style("stroke", function (d){
-                        return linksColorScale(d.distFromEnd);
-                    });
-                        
-            link.exit().remove();
-
-
-            //CREATE NODE GROUPS
-            var g = this.vis.selectAll("g.data-group")
-                    .data(nodes, function (d) {
-                        return d.uniqueID;
-                    });
-
-            var gEnter = g.enter()
-                    .append("g")
-                    .call(this.force.drag);
-
-            //DRAW NODE GROUPS
-            //First draw the 'trash' and 'preview' buttons for 'dataset' nodes
-            var gEnterDataset = gEnter.filter(function(d,i){
-                return d.type === 'dataset';
-            });
-            var trashOption = gEnterDataset
-                .append("g")
-                .attr("class", "dataset-options-button-group trash");
-            trashOption
-                .append("svg:circle")
-                .attr("class","")
-                .attr("r", 15)
-                .attr("cx", 0)
-                .attr("cy", 0);
-
-            gEnter.append("svg:circle")
-                    .attr("class", function (d) {
-                        return d.type + ' node';
-                    })
-                    .attr("r", function(d){
-                        if (d.type === 'dataset') return 25;
-                        return 14;
-                    })
-                    .attr("id", function (d) {
-                        return "node-" + d.uniqueID;
-                    });
-            gEnter.append("image")
-                    // .attr("class", "icon-large icon-search")
-                    .attr("xlink:href", function(d){
-                        // console.log("d.operatorName", d.operatorName);
-                        if (d.datasetName) return config.getIconByDataset(d.datasetName).path;
-                        else return config.getIconByOperation(d.opId).path;
-                    })
-                    .attr("x", function(d){
-                        if (d.datasetName) return config.getIconByDataset(d.datasetName).width/-2;
-                        else return config.getIconByOperation(d.opId).width/-2;
-                    })
-                    .attr("y", function(d){
-                        if (d.datasetName) return config.getIconByDataset(d.datasetName).height/-2;
-                        else return config.getIconByOperation(d.opId).height/-2;
-                    })
-                    .attr("width", function(d){
-                        if (d.datasetName) return config.getIconByDataset(d.datasetName).width;
-                        else return config.getIconByOperation(d.opId).width;
-                    })
-                    .attr("height", function(d){
-                        if (d.datasetName) return config.getIconByDataset(d.datasetName).height;
-                        else return config.getIconByOperation(d.opId).height;
-                    });
-            // node label: types
-            gEnter.append("text")
-                    .attr("class", function (d) {
-                        return 'node-label-'+d.type;
-                    })
-                    .attr("y", function(d){
-                        if (d.type === 'dataset') return 45;
-                        return 30;
-                    })
-                    .attr("text-anchor", "middle")
-                    .text(function (d) {
-                        return ((d.name || d.operatorName || d.datasetName))
-                    });
-            // node label: id
-            gEnter.append("text")
-                    .attr("class", "node-label-id")
-                    .attr("y", function(d){
-                        if (d.type === 'dataset') return 58;
-                        return 42;
-                    })
-                    .attr("text-anchor", "middle")
-                    .text(function (d) {
-                        return ("id " + d.uniqueID +"")
-                    });
-
-            g.attr("class", function (d) {
-                var terminal = "";
-                if (d.terminal) {
-                    terminal = " terminal"
-                }
-                return "data-group " + d.type + terminal;
-            });
-
-            //Handling exit gracefully
-            g.exit()
-                .transition()
-                .style('opacity',0)
+            node.exit()
                 .remove();
 
 
-            //ADD OPERATOR BUTTONS BASED ON FINAL CHILDREN, NOT PART OF FORCE LAYOUT
-            this.vis.selectAll(".operator-button-group").remove();
+            //draw, update or remove links
+            var link = this.vis.selectAll("line.link")
+                .data(this.links, function(d){ return d.target.id; });
 
-            var addButtonNodes = g.filter(function (d) {
-                    return _.findWhere(lastChildren, {uniqueID: d.uniqueID})
+            link.enter().insert("svg:line", ".node")
+                .attr("class","link")
+                .attr("x1", function(d){ return d.source.x; })
+                .attr("y1", function(d){ return d.source.y; })
+                .attr("x2", function(d){ return d.target.x; })
+                .attr("y2", function(d){ return d.target.y; })
+                .style("stroke", "none");
+
+            link.transition()
+                .style("stroke", function(d){
+                    if(d.source.depth == 0){
+                        return "none";
+                    }else if(d.target.highlighted){
+                        return colorScale(d.source.depth/5);
+                    }else if(d.target.isOption){
+                        return "#aaa";
+                    }else{
+                        return "#444";
+                    }
                 })
-                .append("g")
-                .attr("class", "operator-button-group")
-            addButtonNodes
-                    .append('svg:line')
-                    .attr("class", "add-operator-link")
-                    .style('stroke-width', 4)
-                    .attr("x1", function(d){
-                        // mdulate the line length according to 'dataset' or 'operator'
-                        if (d.type === 'dataset') return 27;
-                        else  return 17;
-                    })
-                    .attr("y1", 0)
-                    .attr("x2", this.linkDistance - 17)
-                    .attr("y2", 0);
-            addButtonNodes
-                    .append("svg:circle")
-                    .attr("class", "add-operator-button")
-                    .attr("r", 15)
-                    .attr("cx", this.linkDistance)
-                    .attr("cy", 0);
-
-            addButtonNodes
-                    .append("text")
-                    .attr("class", "add-operator-label text-select-none")
-                    .attr("x", this.linkDistance - 6)
-                    .attr("y", 5)
-                    .text("+");
-
-            //Tapping 'dataset' nodes will show and hide .dataset-options-button-group
-            gEnter.each(function(d,i){
-                Hammer(this).on('tap', showDatasetOptions);
-            });
-
-            function showDatasetOptions(e){
-                Hammer(this).off('tap');
-                Hammer(this).on('tap', hideDatasetOptions);
-
-                d3.select(this).selectAll('.trash')
-                    .select('circle')
-                    .transition()
-                    .attr('cy', -self.linkDistance/2);
-            };
-            function hideDatasetOptions(e){
-                Hammer(this).off('tap');
-                Hammer(this).on('tap', showDatasetOptions)
-
-                d3.select(this).select('.trash')
-                    .select('circle')
-                    .transition()
-                    .attr('cy', 0);
-            }
-            trashOption
-                .each(function(d,i){
-                    Hammer(this).on('tap', function(e){
-                        e.stopPropagation();
-
-                        var removalDatasets = self.collection.filter(function(model){
-                            return (model.get("uniqueID")) == d.uniqueID;
-                        });
-
-                        vent.trigger("remove:node", removalDatasets[0]);
-                    })
+                .style("stroke-width", function(d){
+                    if(d.target.highlighted){
+                        return "5px";
+                    }else{
+                        return "2px";
+                    }
                 });
 
-            this.force.start();
+            link.exit().remove();
 
-            // FORCE LAYOUT BEHAVIOR
-            function tick(e) {
 
-                //dynamic y placement for dataset nodes
-                datasets.forEach(function (d, i) {
-                    d.y = d.yStore;
-                });
 
+            function tick(e){
+
+                /*
                 var ky = .8 * e.alpha, kx = 1.4 * e.alpha;
-                //var ky = .4 * e.alpha, kx = 1.4 * e.alpha;
-                links.forEach(function (d, i) {
+
+                self.links.forEach(function (d, i) {
                     d.target.y += (d.source.y - d.target.y) * ky;
                     d.target.x += (d.source.x + 120 - d.target.x) * kx;
                 });
+                */
 
+                link
+                    .attr("x1", function(d){ return d.source.x; })
+                    .attr("y1", function(d){ return d.source.y; })
+                    .attr("x2", function(d){ return d.target.x; })
+                    .attr("y2", function(d){ return d.target.y; });
 
-                link.attr("x1", function (d) {
-                    return d.source.x;
-                })
-                        .attr("y1", function (d) {
-                            return d.source.y;
-                        })
-                        .attr("x2", function (d) {
-                            return d.target.x;
-                        })
-                        .attr("y2", function (d) {
-                            return d.target.y;
-                        });
-
-                g.attr("transform", function (d) {
-                    return "translate(" + d.x + "," + d.y + ")";
-                })
-
-            }
-
-            // OPERATOR NODE EVENT
-            this.vis.selectAll(".data-group.operator, .data-group.dataset")
-                    .on("click", function (d, i) {
-
-                        //reduced collection of NodeItem models that have been clicked
-                        var inputDatasets = [];
-                        inputDatasets = self.collection.filter(function (model) {
-                            return (model.get("uniqueID") == d.uniqueID);
-                        });
-
-                        vent.trigger('app:pos:opFlow');
-                        vent.trigger('apply:selection', inputDatasets);
-
-                        var terminal = "";
-
-                        if (d3.select(this).classed("terminal")) {
-                            terminal = "terminal"
-                        }
-                        var point = d3.mouse(this);
-                        self.ui.flowCanvas.append($('#operator-actions'));
-                        $('#operator-actions').css({
-                            top: d.y + point[1],
-                            left: d.x + point[0]
-                        }).show();
-
-                        //TODO: why is the menu for terminal nodes treated differently?
-                        $("#operator-actions").find("#remove-node").attr("class",'').attr("class", terminal)
-
-                        $('#operator-list').css({
-                            left: d.x + point[0] + 150
-                        })
-
-                        d3.event.stopPropagation();
+                node
+                    .attr("transform", function(d){
+                        return "translate(" + d.x + "," + d.y + ")";
                     });
-
-            this.vis.selectAll(".operator-button-group")
-                    .on("click", function (d, i) {
-                        //trigger an option on the collection that indicates final child
-                        //console.log("final child")
-                    })
-
-        },
-
-        addNode: function (data) {
-            var self = this;
-            var newNode = data.toJSON();
-
-            //TODO: make this DRY
-            // for initial nodes, use dataset ids as predecessors
-            if (newNode.type == "operator") {
-                //instate precedessor ids instead of active keys in d3
-                if (data.get("predecessorID").length > 0) {
-                    data.get("predecessorID").forEach(function(d) {
-                        var inputModel = _.findWhere(self.nodes,{uniqueID: d})
-                        self.links.push({source: inputModel, target: newNode});
-                    });
-                } else {
-                    data.get("dataset").forEach(function(d) {
-                        var inputModel = _.findWhere(self.nodes,{uniqueID: d})
-                        self.links.push({source: inputModel, target: newNode});
-
-                    });
-                }
-            }
-
-            this.nodes.push(newNode)
-            this.graph()
-
-        },
-
-        initRemove: function (data) {
-            var currModel = this.collection.find(function (d) {
-                return d.get("uniqueID") == data.get("uniqueID");
-            })
-
-            var modelType = currModel.get("type");
-
-            if (modelType == "dataset") {
-                vent.trigger("remove:dataset", currModel);
-            } else if (modelType == "operator") {
-                vent.trigger("remove:operator", currModel);
             }
 
         },
 
-        removeNode: function (data) {
-            //event is triggered by the removal of node from the collection
+        toggleChildren: function(d){
 
-            var self = this;
+            //TODO: deprecate this
+            //turning d.children to d._children removes children from the tree graph
+            if(d.children){
+                d._children = d.children;
+                d.children = null;
+            }else if(d._children){
+                d.children = d._children;
+                d._children = null;
+            }
+        },
 
-            //remove selected node
-            _.each(this.nodes, function (d, i) {
-                if (d.uniqueID == data.get("uniqueID")) {
-                    self.nodes.splice(i, 1);
-                }
-            });
+        findWorkflow: function(d){
+            //workflows, if they exist, is stored in ._children property
+            if(d._children){
+                console.log("found workflow");
+                console.log(d._children[0].workflowID);
 
-            //remove source links
+                //sync workflow
+            }else{
+                if(d.children) d.children.forEach(function(dd){ dd.isOption = true;});
 
-            _.each(this.links, function (d, i) {
-                _.each(d.target.predecessorID, function(dd,ii) {
-                    if (data.get("predecessorID") && (dd == data.get("predecessorID")[ii])) {
-                        self.links.splice(i, 1);
-                    }
-                })
-            });
-
-            this.graph();
-
+                //show some kind of prompt
+            }
         },
 
         renderFullGraph: function () {
-            var self = this;
-
-            if (this.collection) {
-
-                this.nodes = this.collection.toJSON()
-
-                this.collection.each(function(m){
-                    var datasets = m.get("dataset");
-                    var uniqueID = m.get("uniqueID");
-                    var operators = m.get("predecessorID");
-
-                    if (datasets) {
-                        datasets.forEach(function(d,i){
-                            self.links.push({
-                                source: _.findWhere(self.nodes, {uniqueID: d}),
-                                target: _.findWhere(self.nodes, {uniqueID: uniqueID})
-                            });
-
-                        })
-                    } else if (operators) {
-                        operators.forEach(function(d,i){
-                            self.links.push({
-                                source: _.findWhere(self.nodes,{uniqueID: d}),
-                                target: _.findWhere(self.nodes,{uniqueID: uniqueID})
-                            });
-                        })
-                    }
-                });
-            }
 
             this.graph();
 
-        },
-
-        showSystemDatasets: function (e) {
-            e.stopPropagation();
-            vent.trigger('app:pos:data');
-        },
-
-        appendHtml: function (collectionView, itemView) {
-            this.ui.list.append(itemView.el);
-            //d3.select(this.el).select('.viz').append(itemView.el)
-            //collectionView.$("li:first").append(itemView.el);
-        },
-
-        updateEdgesWithDistanceCount: function(nodes, edges, endNode, levelCounter, endNodeID) {
-            var self = this;
-            var parentEdges = _.where(edges, {target: endNode });
-            if (parentEdges) {
-                _.each(parentEdges, function(edge){
-                    //console.log(levelCounter+" : "+edge.source.uniqueID+" --> "+edge.target.uniqueID);
-                    edges[ _.indexOf(edges, edge) ].distFromEnd = levelCounter;
-                    edges[ _.indexOf(edges, edge) ].endNodeID = endNodeID;
-                    self.updateEdgesWithDistanceCount(nodes, edges, edge.source, levelCounter+1, endNodeID);
-                });
-            };
         }
+
     });
 
 
     //public api
 
     OperatorFlow.renderFlowItems = function (model) {
+        //model => config.workflow
 
         var operatorFlowView = new OperatorFlowView({
-            model: model,
-            collection: model.get("mergedRepresentations")
+            //model: model,
+            //collection: model.get("mergedRepresentations")
         });
-		
+
+        //show this view in the parent layout
         vent.trigger('show:operatorFlowItems', operatorFlowView);
 
 		//TODO: make it rain!

@@ -12,39 +12,41 @@ html, body, #app{
 }
 #app{
 	color: #fff;
-	background: url('../assets/border-bottom.png') #000 no-repeat;
-	background-position: left bottom;
+    background: -webkit-radial-gradient(center center, circle contain, #4D4D4F 0%, #000 100%);
+	/*background: url('../assets/border-bottom.png') #000 no-repeat;
+	background-position: left bottom;*/
 	background-size: 100% auto;
 }
 
 /* 
  * App Regions
  */
-#app #conveyor{
-	height: 20%; /*216*/
-	top: 0;
-	background: #000;
-	position: relative;
+#app{
+    height: 100%;
+    overflow: hidden;
+}
+#app #control-panel{
+    height: 200px; /* arbitrary */
+    position: absolute;
+    top: -200px;
 }
 #app #container{
-	height: 70%; /*810*/
+	height: 100%; /*972px*/
 	width: 200%;
 }
 #app #container .pane{
-	height: 100%;
+	height: 97%;
 	float: left;
 }
 #app #container #data-manager{
 	width: 1500px;
-	margin: 0 40px;
+	margin: 20px 40px;
+    background: url("../assets/logo.png") no-repeat;
+    background-position: center center;
 }
 #app #container #viz-gallery{
 	width: 1500px;
-	margin: 0 40px 0 0;
-}
-#app #nav{
-	height: 10%;
-	padding: 20px;
+	margin: 20px 40px 20px 0;
 }
 
 /*
@@ -60,55 +62,6 @@ h1{
 	font-size: 1.5em;
 }
 
-/* 
- * Region: Conveyor
- */
-#conveyor .conveyor-inner,
-#conveyor .conveyor-inner #webgl,
-#conveyor .conveyor-inner #dataset-list{
-	height: 100%;
-	width: 100%;
-}
-#conveyor #dataset-list{
-	position: absolute;
-	top: 0;
-}
-#conveyor #dataset-list li{
-	list-style: none;
-	width: 48px;
-	height: 48px;
-	float: left;
-	position: absolute;
-	left: -2000px;
-	background: url('../assets/icon_dataset_background.png') no-repeat center;
-	background-size: 100% auto;
-}
-#conveyor #dataset-list li.paused{
-	width: 56px;
-	height: 56px;
-}
-#conveyor #dataset-list li.dragged a{
-    opacity: 0.5;
-}
-#conveyor #dataset-list li a{
-	width: 100%;
-	height: 100%;
-	display: block;
-	text-indent: -9999px;
-}
-#conveyor #dataset-list li .dataset-desc{
-	width: 300%;
-	margin: 10px 0 0 -100%;
-	padding: 5px;
-	background: #fc0;
-	opacity: 0;
-	transition: opacity 2s;
-	-webkit-transition: margin 2s;
-	-moz-transition: margin 2s;
-}
-#conveyor #dataset-list li.paused .dataset-desc{
-	opacity: 1;
-}
 
 /* 
  *  Region: Nav
@@ -130,21 +83,31 @@ h1{
 }
 /* Background and appearance */
 #data-manager{
-	background: -webkit-linear-gradient(35deg, rgba(0,0,0,0.5), rgba(102,255,226,0.15));
-}
-#data-manager.armed{
-    background: -webkit-linear-gradient(35deg, rgba(0,0,0,0.5), rgba(255,204,0,0.2));
 }
 /* Operation flow visualization */
 #data-manager #flow-canvas svg text{
 	fill: #fff;
 }
-#data-manager #flow-canvas svg circle{
+#flow-canvas svg g.dataset circle{
 	stroke-width: 2.5px;
 	stroke: #fff;
     fill: #000;
 }
-#data-manager #flow-canvas svg g.operator-button-group line{
-	stroke: #ffcc00;
+#flow-canvas svg g.operator circle,
+#flow-canvas svg g.parameter circle{
+    stroke: #000;
+    stroke-width: 0.5px;
+    fill: #444;
+}
+#flow-canvas svg line{
+    stroke-width: 3px;
+    stroke: #fff;
+}
+#flow-canvas svg g.dataset text,
+#flow-canvas svg g.operator text{
+    font-size: 18px;
+}
+#flow-canvas svg g.parameter text{
+    font-size: 12px;
 }
 

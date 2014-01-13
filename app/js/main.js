@@ -34,6 +34,7 @@ require.config({
         'templates': 'app/templates',
         'ui': 'app/ui',
         'util': 'app/util',
+        'workflowHash': 'app/workflow-hash',
         
         'Three': 'app/libs/Three/three.min',
         'Tween': 'app/libs/Tween/Tween',
