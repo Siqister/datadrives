@@ -208,9 +208,9 @@ define([
 
             //NODE MANIPULATION
 
-            //don't show terminal "dataset" nodes
+            //don't show terminal "workflow" nodes
             this.nodes.forEach(function(d){
-                if(d.workflowID){
+                if(d.class == "workflow"){
                     var parent = d.parent;
                     parent._children = parent._children || [];
                     parent._children.push(d);
@@ -474,7 +474,7 @@ define([
             //workflows, if they exist, is stored in ._children property
             if(d._children){
                 console.log("found workflow");
-                console.log(d._children[0].workflowID);
+                console.log(d._children[0].leafID);
 
                 //sync workflow
             }else{
